@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>GL Regional Explorer — Participatory Mapping</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+          crossorigin=""></script>
+
+  <!-- Shapefile ZIP loader -->
+  <script src="https://unpkg.com/shpjs@latest/dist/shp.min.js"></script>
+
+  <style>
+    :root{
+      --sidebar-bg:#ffffff;
+      --sidebar-fg:#0f172a;
+      --muted:#64748b;
+      --panel:#f8fafc;
+      --border:#e5e7eb;
+      --accent:#0ea5e9;
+      --sidebar-gap:24px;
+      --sidebar-w:420px;
+    }
+
+    html,body{
+      height:100%;
+      margin:0;
+      font-family: Corbel, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size:11pt;
+    }
+
+    .app{ position:relative; height:100%; }
+
+    #map{
+      position:absolute;
+      inset:0;
+      background:#eef2ff;
+      z-index:0;
+    }
+
+    .sidebar{
+      position:absolute;
+      right:var(--sidebar-gap);
+      top:var(--sidebar-gap);
+      bottom:var(--sidebar-gap);
+      width:var(--sidebar-w);
+      overflow:auto;
+      background:var(--sidebar-bg);
+      color:var(--sidebar-fg);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:18px 18px 14px;
+      box-shadow:0 10px 30px rgba(0,0,0,.15);
+      z-index:1200;
+    }
+
+    .logo-wrap{ margin-bottom:10px; }
+    .logo-img{
+      max-width:210px;
+      height:auto;
+      display:block;
+    }
+
+    h1{font-size:18px;margin:4px 0 10px;}
+    h2{font-size:14px;margin:0 0 8px;}
+    .small{font-size:12px;}
+    .muted{color:var(--muted);}
+
+    .card{
+      background:transparent;
+      border:none;
+      padding:0 0 16px;
+      margin:0 0 16px;
+    }
+
+    .stack{display:grid;gap:6px;}
+
+    a,a:visited{color:#2563eb;text-decoration:none;}
+    a:hover{text-decoration:underline;}
+
+    .divider{
+      border:0;
+      border-top:1px solid var(--border);
+      margin:12px 0 16px;
+    }
+
+    .legend-group{
+      border:0;
+      background:transparent;
+      border-radius:0;
+      padding:8px 0 4px;
+      margin-top:4px;
+    }
+
+    .legend-header{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      font-weight:600;
+      margin:2px 0 6px;
+    }
+
+    .legend-item{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      padding:4px 0;
+      margin:0 0 0 22px;
+      border-radius:8px;
+    }
+
+    .legend-item:hover{
+      background:#f8fafc;
+    }
+
+    .legend-swatch{
+      width:16px;
+      height:16px;
+      border-radius:3px;
+      border:1px solid rgba(0,0,0,.15);
+      flex:0 0 16px;
+      box-sizing:border-box;
+    }
+
+    .legend-note{
+      margin-top:6px;
+      color:var(--muted);
+    }
+
+    .info-icon{
+      position:relative;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:16px;
+      height:16px;
+      border-radius:9999px;
+      border:1px solid var(--muted);
+      color:var(--muted);
+      font-size:11px;
+      line-height:1;
+      cursor:default;
+    }
+
+    .info-icon .info-tooltip{
+      position:absolute;
+      top:20px;
+      left:50%;
+      width:220px;
+      max-width:220px;
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:8px 10px;
+      font-size:11px;
+      color:var(--muted);
+      box-shadow:0 10px 20px rgba(0,0,0,.18);
+      opacity:0;
+      pointer-events:none;
+      transform:translate(-50%, -4px);
+      transition:opacity .15s ease, transform .15s ease;
+      z-index:2000;
+    }
+
+    .info-icon:hover .info-tooltip{
+      opacity:1;
+      pointer-events:auto;
+      transform:translate(-50%, 0);
+    }
+
+    .popup-table{
+      border-collapse:collapse;
+      width:100%;
+      font-size:11px;
+    }
+
+    .popup-table td{
+      vertical-align:top;
+      padding:2px 4px;
+      border-bottom:1px solid #eef2f7;
+    }
+
+    .popup-table td:first-child{
+      font-weight:600;
+      color:#334155;
+      width:42%;
+    }
+
+    /* Left toolbox */
+    .toolbox{
+      position:absolute;
+      left:8px;
+      top:80px;
+      bottom:70px;
+      width:78px;
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+      background:#f4f4f4;
+      border-radius:18px;
+      border:1px solid rgba(0,0,0,0.12);
+      box-shadow:0 8px 20px rgba(0,0,0,0.18);
+      overflow:hidden;
+      z-index:1100;
+    }
+
+    .tool-btn{
+      border:none;
+      background:transparent;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:4px;
+      padding:12px 4px;
+      cursor:pointer;
+      font-size:11px;
+      color:#4b5563;
+      width:100%;
+    }
+
+    .tool-btn + .tool-btn{
+      border-top:1px solid rgba(0,0,0,0.08);
+    }
+
+    .tool-btn.active{
+      background:#e5e7eb;
+    }
+
+    .tool-icon{
+      width:30px;
+      height:30px;
+      border-radius:999px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      overflow:hidden;
+      background:#ffffff;
+    }
+
+    .tool-icon-img{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+
+    .tool-label{
+      text-transform:uppercase;
+      font-size:9px;
+      letter-spacing:0.06em;
+      text-align:center;
+      line-height:1.2;
+    }
+
+    .tool-panel{
+      position:absolute;
+      left:90px;
+      top:70px;
+      max-width:260px;
+      background:#ffffff;
+      border-radius:12px;
+      border:1px solid var(--border);
+      box-shadow:0 10px 30px rgba(0,0,0,.2);
+      padding:10px 12px;
+      z-index:1150;
+      opacity:0;
+      transform:translateX(-10px);
+      pointer-events:none;
+      transition:opacity .15s ease, transform .15s ease;
+    }
+
+    .tool-panel.visible{
+      opacity:1;
+      transform:translateX(0);
+      pointer-events:auto;
+    }
+
+    .tool-panel-header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:4px;
+    }
+
+    .tool-panel-title{
+      font-size:13px;
+      font-weight:600;
+    }
+
+    .tool-panel-close{
+      border:none;
+      background:transparent;
+      font-size:16px;
+      line-height:1;
+      cursor:pointer;
+      color:var(--muted);
+    }
+
+    .tool-panel-close:hover{
+      color:#0f172a;
+    }
+
+    .tool-panel-body{
+      font-size:11px;
+      color:var(--muted);
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div id="map"></div>
+
+  <!-- Left toolbox -->
+  <nav class="toolbox" id="toolbox">
+    <button class="tool-btn" data-tool="permafrost">
+      <span class="tool-icon">
+        <img src="images/perma_change.jpg" alt="Permafrost change" class="tool-icon-img">
+      </span>
+      <span class="tool-label">Permafrost<br>change</span>
+    </button>
+
+    <button class="tool-btn" data-tool="landcover">
+      <span class="tool-icon">
+        <img src="images/landuse.jpg" alt="Land cover" class="tool-icon-img">
+      </span>
+      <span class="tool-label">Land<br>cover</span>
+    </button>
+
+    <button class="tool-btn" data-tool="snow">
+      <span class="tool-icon">
+        <span style="font-size:16px;">❄</span>
+      </span>
+      <span class="tool-label">Snow<br>cover</span>
+    </button>
+
+    <button class="tool-btn" data-tool="climate">
+      <span class="tool-icon">
+        <img src="images/climate.jpg" alt="Climate" class="tool-icon-img">
+      </span>
+      <span class="tool-label">Climate</span>
+    </button>
+
+    <div style="flex:1;"></div>
+
+    <button class="tool-btn" data-tool="explore">
+      <span class="tool-icon">
+        <img src="images/explore.png" alt="Explore" class="tool-icon-img">
+      </span>
+      <span class="tool-label">Explore</span>
+    </button>
+
+    <button class="tool-btn" data-tool="about">
+      <span class="tool-icon">
+        <span style="font-size:16px;">i</span>
+      </span>
+      <span class="tool-label">About</span>
+    </button>
+  </nav>
+
+  <div class="tool-panel" id="toolPanel" data-active="">
+    <div class="tool-panel-header">
+      <div class="tool-panel-title" id="toolPanelTitle"></div>
+      <button class="tool-panel-close" id="toolPanelClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="tool-panel-body" id="toolPanelBody"></div>
+  </div>
+
+  <aside class="sidebar">
+    <div class="logo-wrap">
+      <img src="images/illuq_logo.jpg" alt="ILLUQ logo" class="logo-img">
+    </div>
+
+    <h1>Participatory Mapping in FIELDWORK </h1>
+    <p class="small muted">
+      This viewer shows participatory mapping layers for FIELDWORK, including hunting and fishing areas,
+      sled routes, valued places, and places where people reported landscape change, impacts, or concern.
+    </p>
+
+    <hr class="divider">
+
+    <div class="card" id="card-basemaps">
+      <h2>Base map</h2>
+      <div class="stack">
+        <label><input type="radio" name="basemap" value="osm"> OpenStreetMap Standard</label>
+        <label><input type="radio" name="basemap" value="voyager"> CARTO Voyager</label>
+        <label><input type="radio" name="basemap" value="topography"> OpenTopoMap</label>
+        <label><input type="radio" name="basemap" value="imagery" checked> Esri World Imagery</label>
+      </div>
+    </div>
+
+    <div class="card" id="card-display">
+      <h2>Display</h2>
+      <label class="small muted">
+        Transparency: <strong id="opacPct">15%</strong>
+      </label>
+      <input type="range" id="opacity" min="0" max="100" step="1" value="15"
+             style="width:100%; margin-top:8px;">
+      <p class="small muted" style="margin-top:6px;">
+        Affects all active mapped layers.
+      </p>
+    </div>
+
+    <div class="card" id="card-participatory">
+      <h2>Mapping layers</h2>
+
+      <div class="legend-group" id="grpSubsistenceBlock">
+        <label class="legend-header">
+          <input type="checkbox" id="grpSubsistence">
+          <span>Subsistence activities</span>
+          <span class="info-icon">i
+            <span class="info-tooltip">
+              Areas and sites related to hunting and fishing activities, represented as polygons and points.
+            </span>
+          </span>
+        </label>
+
+        <label class="legend-item" data-style-key="hunting">
+          <input type="checkbox" id="lyrHunting">
+          <span class="legend-swatch"></span>
+          <span>Hunting areas</span>
+        </label>
+
+        <label class="legend-item" data-style-key="fishingCoast">
+          <input type="checkbox" id="lyrFishingCoast">
+          <span class="legend-swatch"></span>
+          <span>Coastal fishing areas</span>
+        </label>
+
+        <label class="legend-item" data-style-key="fishingLakes">
+          <input type="checkbox" id="lyrFishingLakes">
+          <span class="legend-swatch"></span>
+          <span>Lake fishing sites</span>
+        </label>
+      </div>
+
+      <div class="legend-group" id="grpMobilityBlock">
+        <label class="legend-header">
+          <input type="checkbox" id="grpMobility">
+          <span>Travel and movement</span>
+          <span class="info-icon">i
+            <span class="info-tooltip">
+              Travel connections across the landscape, mapped here as sled lines.
+            </span>
+          </span>
+        </label>
+
+        <label class="legend-item" data-style-key="sledLines">
+          <input type="checkbox" id="lyrSledLines">
+          <span class="legend-swatch"></span>
+          <span>Sled lines</span>
+        </label>
+      </div>
+
+      <div class="legend-group" id="grpValuesBlock">
+        <label class="legend-header">
+          <input type="checkbox" id="grpValues">
+          <span>Valued places</span>
+          <span class="info-icon">i
+            <span class="info-tooltip">
+              Places important for symbolic meaning, outdoor use, and future preservation.
+            </span>
+          </span>
+        </label>
+
+        <label class="legend-item" data-style-key="favAreas">
+          <input type="checkbox" id="lyrFavAreas">
+          <span class="legend-swatch"></span>
+          <span>Favourite outdoor areas</span>
+        </label>
+
+        <label class="legend-item" data-style-key="symbolicMeaning">
+          <input type="checkbox" id="lyrSymbolicMeaning">
+          <span class="legend-swatch"></span>
+          <span>Spiritual or symbolic places</span>
+        </label>
+
+        <label class="legend-item" data-style-key="futureGenerations">
+          <input type="checkbox" id="lyrFutureGenerations">
+          <span class="legend-swatch"></span>
+          <span>Important for future generations</span>
+        </label>
+      </div>
+
+      <div class="legend-group" id="grpChangeBlock">
+        <label class="legend-header">
+          <input type="checkbox" id="grpChange">
+          <span>Change and concern</span>
+          <span class="info-icon">i
+            <span class="info-tooltip">
+              Places where people observed change, felt especially affected, or identified possible ground contamination.
+            </span>
+          </span>
+        </label>
+
+        <label class="legend-item" data-style-key="changesLands">
+          <input type="checkbox" id="lyrChangesLands">
+          <span class="legend-swatch"></span>
+          <span>Observed landscape changes</span>
+        </label>
+
+        <label class="legend-item" data-style-key="changesAffected">
+          <input type="checkbox" id="lyrChangesAffected">
+          <span class="legend-swatch"></span>
+          <span>Places most affected</span>
+        </label>
+
+        <label class="legend-item" data-style-key="groundContamination">
+          <input type="checkbox" id="lyrGroundContamination">
+          <span class="legend-swatch"></span>
+          <span>Possible ground contamination</span>
+        </label>
+      </div>
+
+      <div class="legend-group" id="grpReferenceBlock">
+        <label class="legend-header">
+          <input type="checkbox" id="grpReference">
+          <span>Reference boundaries</span>
+          <span class="info-icon">i
+            <span class="info-tooltip">
+              Administrative and protected-area boundaries used as reference layers.
+            </span>
+          </span>
+        </label>
+
+        <label class="legend-item" data-style-key="municipalLimits">
+          <input type="checkbox" id="lyrMunicipalLimits">
+          <span class="legend-swatch"></span>
+          <span>Municipal boundaries</span>
+        </label>
+
+        <label class="legend-item" data-style-key="nationalPark">
+          <input type="checkbox" id="lyrNationalPark">
+          <span class="legend-swatch"></span>
+          <span>National park</span>
+        </label>
+      </div>
+
+      <div class="legend-note small">
+        Tip: click a group checkbox to toggle all layers in that group.
+      </div>
+    </div>
+
+    <div class="card" id="card-sources">
+      <h2>Data sources &amp; methodology</h2>
+      <p class="small">
+        • <strong>GL limits &amp; layers</strong>: local shapefiles (zipped) loaded via <code>shp.js</code>.<br>
+        • <strong>Tiles</strong>: OpenStreetMap, CARTO, Esri, and OpenTopoMap.<br>
+      </p>
+      <p class="small muted">
+        Methodology link or project note section.
+      </p>
+    </div>
+
+    <p class="small muted">
+      &copy; Project team • &copy; OpenStreetMap &amp; contributors • &copy; Esri
+    </p>
+  </aside>
+</div>
+
+<script>
+/* ---------------------------------------------
+   1) Map setup
+--------------------------------------------- */
+
+console.log("MAP VERSION: FIELDWORK PARTICIPATORY MAPPING WITH IMAGE TOOLBOX + AUTO-ZOOM");
+
+const map = L.map('map', {
+  center: [72.0, -42.0],
+  zoom: 4
+});
+
+const basemaps = {
+  osm: L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 19, attribution: '&copy; OpenStreetMap' }
+  ),
+  voyager: L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; OpenStreetMap & CARTO' }
+  ),
+  topography: L.tileLayer(
+    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    {
+      subdomains: 'abc',
+      maxZoom: 17,
+      attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)'
+    }
+  ),
+  imagery: L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 19, attribution: 'Imagery &copy; Esri' }
+  )
+};
+
+basemaps.imagery.addTo(map);
+setTimeout(() => map.invalidateSize(), 0);
+L.control.scale({ imperial: false }).addTo(map);
+
+/* ---------------------------------------------
+   2) Left toolbox info
+--------------------------------------------- */
+
+const TOOL_INFO = {
+  permafrost: {
+    title: 'Permafrost change',
+    body: 'Background information, explanatory text, or links related to permafrost change in the study region.'
+  },
+  landcover: {
+    title: 'Land cover',
+    body: 'Land-cover descriptions, interpretation notes, or links to other environmental layers.'
+  },
+  snow: {
+    title: 'Snow cover',
+    body: 'Explanatory notes on snow, winter conditions, or seasonal mobility context.'
+  },
+  climate: {
+    title: 'Climate',
+    body: 'Climate indicators, interpretation notes, and links to related reports or datasets.'
+  },
+  explore: {
+    title: 'Explore',
+    body: 'Guidance on map exploration, layer switching, and interpretation of participatory data.'
+  },
+  about: {
+    title: 'About',
+    body: 'Project background, team information, acknowledgements, and methodology links.'
+  }
+};
+
+const toolboxButtons = document.querySelectorAll('.toolbox .tool-btn');
+const toolPanel = document.getElementById('toolPanel');
+const toolPanelTitle = document.getElementById('toolPanelTitle');
+const toolPanelBody = document.getElementById('toolPanelBody');
+const toolPanelClose = document.getElementById('toolPanelClose');
+
+toolboxButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.tool;
+    const isActive = toolPanel.dataset.active === id;
+
+    if (isActive) {
+      toolPanel.classList.remove('visible');
+      toolPanel.dataset.active = '';
+      toolboxButtons.forEach(b => b.classList.remove('active'));
+      return;
+    }
+
+    toolboxButtons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const info = TOOL_INFO[id];
+    if (info) {
+      toolPanelTitle.textContent = info.title;
+      toolPanelBody.innerHTML = info.body.replace(/\n/g, '<br>');
+      toolPanel.dataset.active = id;
+      toolPanel.classList.add('visible');
+    }
+  });
+});
+
+toolPanelClose.addEventListener('click', () => {
+  toolPanel.classList.remove('visible');
+  toolPanel.dataset.active = '';
+  toolboxButtons.forEach(b => b.classList.remove('active'));
+});
+
+/* ---------------------------------------------
+   3) Paths
+--------------------------------------------- */
+
+const PATHS = {
+  hunting:              'GL/1_hunting/1_hunting.zip',
+  fishingCoast:         'GL/2_fishing_coastal_areas/2_fishing_coastal_areas.zip',
+  sledLines:            'GL/3_sled_lines/3_sled_lines.zip',
+  fishingLakes:         'GL/4_lakes_and_fish/4_lakes_and_fish.zip',
+  symbolicMeaning:      'GL/5_symb_mean/5_symb_mean.zip',
+  changesAffected:      'GL/6_changes_affected/6_changes_affected.zip',
+  groundContamination:  'GL/7_ground_contamination/7_ground_contamination.zip',
+  favAreas:             'GL/8_fav_areas/8_fav_areas.zip',
+  changesLands:         'GL/9_changes_lands/9_changes_lands.zip',
+  futureGenerations:    'GL/10_import_future_gen/10_import_future_gen.zip',
+
+  municipalLimits:      'limits/gl_mun.zip',
+  nationalPark:         'limits/gl_national_park.zip'
+};
+
+/* ---------------------------------------------
+   4) Styles
+--------------------------------------------- */
+
+const STYLE = {
+  hunting: {
+    color: '#8b5e34',
+    fillColor: '#d9c2a3',
+    weight: 1.5,
+    fillOpacity: 0.40,
+    opacity: 1
+  },
+  fishingCoast: {
+    color: '#1d4ed8',
+    fillColor: '#93c5fd',
+    weight: 1.5,
+    fillOpacity: 0.40,
+    opacity: 1
+  },
+  sledLines: {
+    color: '#d9ff00',
+    weight: 6,
+    dashArray: '4 3',
+    opacity: 1
+  },
+  fishingLakes: {
+    color: '#2563eb',
+    fillColor: '#60a5fa',
+    weight: 2,
+    radius: 6,
+    fillOpacity: 0.85,
+    opacity: 1
+  },
+  symbolicMeaning: {
+    color: '#be185d',
+    fillColor: '#f9a8d4',
+    weight: 2,
+    radius: 6,
+    fillOpacity: 0.85,
+    opacity: 1
+  },
+  changesAffected: {
+    color: '#c2410c',
+    fillColor: '#fb923c',
+    weight: 2,
+    radius: 6,
+    fillOpacity: 0.85,
+    opacity: 1
+  },
+  groundContamination: {
+    color: '#111827',
+    fillColor: '#6b7280',
+    weight: 2,
+    radius: 6,
+    fillOpacity: 0.85,
+    opacity: 1
+  },
+  favAreas: {
+    color: '#15803d',
+    fillColor: '#86efac',
+    weight: 2,
+    radius: 6,
+    fillOpacity: 0.85,
+    opacity: 1
+  },
+  changesLands: {
+    color: '#b45309',
+    fillColor: '#facc15',
+    weight: 1.5,
+    fillOpacity: 0.35,
+    opacity: 1
+  },
+  futureGenerations: {
+    color: '#166534',
+    fillColor: '#bbf7d0',
+    weight: 1.5,
+    dashArray: '5 4',
+    fillOpacity: 0.30,
+    opacity: 1
+  },
+  municipalLimits: {
+    color: '#334155',
+    weight: 1.5,
+    dashArray: '6 4',
+    fill: false,
+    opacity: 0.95
+  },
+  nationalPark: {
+    color: '#14532d',
+    fillColor: '#22c55e',
+    weight: 2,
+    fillOpacity: 0.10,
+    opacity: 1
+  }
+};
+
+let currentOpacity = 0.85;
+
+/* ---------------------------------------------
+   5) Sidebar swatches
+--------------------------------------------- */
+
+function paintSwatches(){
+  document.querySelectorAll('.legend-item').forEach(el => {
+    const key = el.dataset.styleKey;
+    const st = STYLE[key] || {};
+    const sw = el.querySelector('.legend-swatch');
+
+    sw.style.opacity = String(currentOpacity);
+
+    if (!st.fillColor && st.color){
+      sw.style.background = 'transparent';
+      sw.style.border = `2px solid ${st.color}`;
+    } else {
+      sw.style.background = st.fillColor || st.color || '#999';
+      sw.style.border = '1px solid rgba(0,0,0,.15)';
+    }
+  });
+}
+paintSwatches();
+
+/* ---------------------------------------------
+   6) Utility functions
+--------------------------------------------- */
+
+function featurePropsHtml(props){
+  if (!props) return '<em>No attributes available</em>';
+
+  const fieldMap = [
+    ['DURING_MON', 'When?'],
+    ['LAYERNAME', 'What?']
+  ];
+
+  const rows = fieldMap
+    .filter(([key]) => props[key] !== null && props[key] !== undefined && String(props[key]).trim() !== '')
+    .map(([key, label]) => `
+      <tr>
+        <td>${label}</td>
+        <td>${props[key]}</td>
+      </tr>
+    `)
+    .join('');
+
+  return rows
+    ? `<table class="popup-table">${rows}</table>`
+    : '<em>No attributes available</em>';
+}
+
+function applyOpacityToLayer(layer, opacity){
+  if (!layer) return;
+
+  layer.eachLayer(l => {
+    if (!l.setStyle) return;
+
+    const newStyle = {};
+    if (typeof l.options.opacity === 'number') newStyle.opacity = opacity;
+    if (typeof l.options.fillOpacity === 'number') newStyle.fillOpacity = opacity;
+
+    l.setStyle(newStyle);
+  });
+}
+
+function zoomToLayer(layer){
+  if (!layer || !layer.getBounds) return;
+  const bounds = layer.getBounds();
+  if (bounds && bounds.isValid()) {
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 });
+  }
+}
+
+function zoomToFeature(lyr){
+  if (!lyr) return;
+
+  if (typeof lyr.getBounds === 'function') {
+    const bounds = lyr.getBounds();
+    if (bounds && bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+      return;
+    }
+  }
+
+  if (typeof lyr.getLatLng === 'function') {
+    map.setView(lyr.getLatLng(), Math.max(map.getZoom(), 11));
+  }
+}
+
+async function loadVector(url){
+  const lower = url.toLowerCase();
+
+  if (lower.endsWith('.geojson') || lower.endsWith('.json')){
+    const bust = (url.includes('?') ? '&' : '?') + '_=' + Date.now();
+    const r = await fetch(url + bust, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
+    return await r.json();
+  }
+
+  return await shp(url);
+}
+
+function normalizeToFC(g){
+  if (!g) return null;
+  if (g.data) return normalizeToFC(g.data);
+  if (g.type === 'FeatureCollection' && Array.isArray(g.features)) return g;
+  if (g.type === 'Feature' && g.geometry) return { type:'FeatureCollection', features:[g] };
+  if (g.type && g.coordinates) return {
+    type:'FeatureCollection',
+    features:[{ type:'Feature', properties:{}, geometry:g }]
+  };
+  if (Array.isArray(g.features)) return { type:'FeatureCollection', features:g.features };
+  return null;
+}
+
+async function firstWorking(urls){
+  const list = Array.isArray(urls) ? urls : [urls];
+  let lastErr = null;
+
+  for (const u of list){
+    try{
+      const raw = await loadVector(u);
+      const fc = normalizeToFC(raw);
+
+      if (fc && fc.features && fc.features.length){
+        return { fc, url: u };
+      }
+
+      throw new Error(`Loaded but not a usable FeatureCollection from ${u}`);
+    } catch (e){
+      console.warn(`Failed loading ${u}:`, e);
+      lastErr = e;
+    }
+  }
+
+  throw lastErr || new Error('No candidate URL worked');
+}
+
+const loaded = {};
+
+async function ensureLayer(id, urlOrList, style){
+  if (loaded[id]) return loaded[id];
+
+  try{
+    const { fc, url } = await firstWorking(urlOrList);
+
+    const layer = L.geoJSON(fc, {
+      style: style,
+      pointToLayer: (feature, latlng) => {
+        return L.circleMarker(latlng, {
+          radius: style.radius || 6,
+          color: style.color || '#111827',
+          fillColor: style.fillColor || style.color || '#111827',
+          weight: style.weight ?? 2,
+          opacity: style.opacity ?? 1,
+          fillOpacity: style.fillOpacity ?? 0.8
+        });
+      },
+      onEachFeature: (feature, lyr) => {
+        lyr.bindPopup(featurePropsHtml(feature.properties), { maxWidth: 320 });
+
+        lyr.on('click', () => {
+          zoomToFeature(lyr);
+        });
+      }
+    });
+
+    applyOpacityToLayer(layer, currentOpacity);
+    loaded[id] = layer;
+    console.log(`Loaded '${id}' (${fc.features.length} features) from ${url}`);
+    return layer;
+  } catch (err){
+    console.error(`Could not load '${id}' from`, urlOrList, err);
+    alert(`Could not load "${id}". Check the path and file name in PATHS.`);
+  }
+}
+
+/* ---------------------------------------------
+   7) Base map switcher
+--------------------------------------------- */
+
+document.querySelectorAll('input[name="basemap"]').forEach(r => {
+  r.addEventListener('change', () => {
+    const v = r.value;
+    Object.values(basemaps).forEach(l => map.removeLayer(l));
+    basemaps[v].addTo(map);
+  });
+});
+
+/* ---------------------------------------------
+   8) Opacity control
+--------------------------------------------- */
+
+const opSlider = document.getElementById('opacity');
+const opPct = document.getElementById('opacPct');
+
+opSlider.addEventListener('input', () => {
+  const transparency = Number(opSlider.value) / 100;
+  currentOpacity = 1 - transparency;
+  opPct.textContent = `${opSlider.value}%`;
+
+  Object.values(loaded).forEach(layer => applyOpacityToLayer(layer, currentOpacity));
+  paintSwatches();
+});
+
+/* ---------------------------------------------
+   9) Layer toggle map
+--------------------------------------------- */
+
+const toggleMap = [
+  ['lyrHunting',             'hunting',             PATHS.hunting,             STYLE.hunting],
+  ['lyrFishingCoast',        'fishingCoast',        PATHS.fishingCoast,        STYLE.fishingCoast],
+  ['lyrFishingLakes',        'fishingLakes',        PATHS.fishingLakes,        STYLE.fishingLakes],
+
+  ['lyrSledLines',           'sledLines',           PATHS.sledLines,           STYLE.sledLines],
+
+  ['lyrFavAreas',            'favAreas',            PATHS.favAreas,            STYLE.favAreas],
+  ['lyrSymbolicMeaning',     'symbolicMeaning',     PATHS.symbolicMeaning,     STYLE.symbolicMeaning],
+  ['lyrFutureGenerations',   'futureGenerations',   PATHS.futureGenerations,   STYLE.futureGenerations],
+
+  ['lyrChangesLands',        'changesLands',        PATHS.changesLands,        STYLE.changesLands],
+  ['lyrChangesAffected',     'changesAffected',     PATHS.changesAffected,     STYLE.changesAffected],
+  ['lyrGroundContamination', 'groundContamination', PATHS.groundContamination, STYLE.groundContamination],
+
+  ['lyrMunicipalLimits',     'municipalLimits',     PATHS.municipalLimits,     STYLE.municipalLimits],
+  ['lyrNationalPark',        'nationalPark',        PATHS.nationalPark,        STYLE.nationalPark]
+];
+
+toggleMap.forEach(([chkId, id, url, style]) => {
+  const checkbox = document.getElementById(chkId);
+
+  checkbox.addEventListener('change', async (e) => {
+    const layer = await ensureLayer(id, url, style);
+    if (!layer) return;
+
+    if (e.target.checked){
+      layer.addTo(map);
+      zoomToLayer(layer);
+    } else {
+      map.removeLayer(layer);
+    }
+
+    syncParents();
+  });
+});
+
+/* ---------------------------------------------
+   10) Group toggles
+--------------------------------------------- */
+
+const groups = {
+  grpSubsistence: ['lyrHunting', 'lyrFishingCoast', 'lyrFishingLakes'],
+  grpMobility:    ['lyrSledLines'],
+  grpValues:      ['lyrFavAreas', 'lyrSymbolicMeaning', 'lyrFutureGenerations'],
+  grpChange:      ['lyrChangesLands', 'lyrChangesAffected', 'lyrGroundContamination'],
+  grpReference:   ['lyrMunicipalLimits', 'lyrNationalPark']
+};
+
+function toggleGroup(parentId){
+  const parent = document.getElementById(parentId);
+
+  parent.addEventListener('change', () => {
+    const targetState = parent.checked;
+
+    for (const cid of groups[parentId]){
+      const cb = document.getElementById(cid);
+      if (cb.checked !== targetState){
+        cb.checked = targetState;
+        cb.dispatchEvent(new Event('change'));
+      }
+    }
+
+    parent.indeterminate = false;
+  });
+}
+
+function syncParents(){
+  Object.entries(groups).forEach(([pid, kids]) => {
+    const p = document.getElementById(pid);
+    const on = kids.filter(id => document.getElementById(id).checked).length;
+
+    p.checked = (on === kids.length);
+    p.indeterminate = (on > 0 && on < kids.length);
+  });
+}
+
+toggleGroup('grpSubsistence');
+toggleGroup('grpMobility');
+toggleGroup('grpValues');
+toggleGroup('grpChange');
+toggleGroup('grpReference');
+syncParents();
+</script>
+</body>
+</html>
