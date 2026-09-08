@@ -14,6 +14,10 @@
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
           crossorigin=""></script>
 
+  <!-- Proj4 + Proj4Leaflet (polar projection support) -->
+  <script src="https://unpkg.com/proj4@2.9.0/dist/proj4.js"></script>
+  <script src="https://unpkg.com/proj4leaflet@1.0.2/src/proj4leaflet.js"></script>
+
   <!-- Shapefile ZIP loader -->
   <script src="https://unpkg.com/shpjs@latest/dist/shp.min.js"></script>
 
@@ -389,11 +393,13 @@
     <div class="card" id="card-basemaps">
       <h2>Base map</h2>
       <div class="stack">
-        <label><input type="radio" name="basemap" value="osm"> OpenStreetMap Standard</label>
-        <label><input type="radio" name="basemap" value="voyager"> CARTO Voyager</label>
-        <label><input type="radio" name="basemap" value="topography"> OpenTopoMap</label>
-        <label><input type="radio" name="basemap" value="imagery" checked> Esri World Imagery</label>
+        <label><input type="radio" name="basemap" value="bluemarble" checked> Blue Marble (NASA)</label>
+        <label><input type="radio" name="basemap" value="modis"> MODIS true colour (NASA)</label>
+        <label><input type="radio" name="basemap" value="coastlines"> Coastlines only</label>
       </div>
+      <p class="small muted" style="margin-top:6px;">
+        Polar stereographic projection (EPSG:3413).
+      </p>
     </div>
 
     <div class="card" id="card-display">
@@ -552,7 +558,7 @@
       <h2>Data sources &amp; methodology</h2>
       <p class="small">
         • <strong>GL limits &amp; layers</strong>: local shapefiles (zipped) loaded via <code>shp.js</code>.<br>
-        • <strong>Tiles</strong>: OpenStreetMap, CARTO, Esri, and OpenTopoMap.<br>
+        • <strong>Tiles</strong>: NASA EOSDIS Global Imagery Browse Services (GIBS), EPSG:3413.<br>
       </p>
       <p class="small muted">
         Methodology link or project note section.
@@ -560,47 +566,66 @@
     </div>
 
     <p class="small muted">
-      &copy; Project team • &copy; OpenStreetMap &amp; contributors • &copy; Esri
+      &copy; Project team • Imagery &copy; NASA EOSDIS GIBS
     </p>
   </aside>
 </div>
 
 <script>
 /* ---------------------------------------------
-   1) Map setup
+   1) Map setup — polar stereographic (EPSG:3413)
 --------------------------------------------- */
 
-console.log("MAP VERSION: Greenland PARTICIPATORY MAPPING WITH IMAGE TOOLBOX + AUTO-ZOOM");
+console.log("MAP VERSION: Greenland PARTICIPATORY MAPPING — EPSG:3413 POLAR");
+
+// NSIDC Sea Ice Polar Stereographic North (central meridian -45°, Greenland upright)
+const EPSG3413 = new L.Proj.CRS(
+  'EPSG:3413',
+  '+proj=stere +lat_0=90 +lat_ts=70 +lon_0=-45 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs',
+  {
+    origin: [-4194304, 4194304],
+    resolutions: [8192, 4096, 2048, 1024, 512, 256],
+    bounds: L.bounds([-4194304, -4194304], [4194304, 4194304])
+  }
+);
+
+const MAX_ZOOM = 5;   // limited by the GIBS EPSG:3413 tile pyramid
 
 const map = L.map('map', {
+  crs: EPSG3413,
   center: [72.0, -42.0],
-  zoom: 4
+  zoom: 1,
+  minZoom: 0,
+  maxZoom: MAX_ZOOM
 });
 
+const gibsOpts = {
+  tileSize: 512,
+  subdomains: 'abc',
+  noWrap: true,
+  maxZoom: MAX_ZOOM,
+  attribution: 'Imagery &copy; NASA EOSDIS GIBS'
+};
+
+// MODIS is a daily product: pick a cloud-free summer date for the study area
+const MODIS_DATE = '2025-07-15';
+
 const basemaps = {
-  osm: L.tileLayer(
-    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { maxZoom: 19, attribution: '&copy; OpenStreetMap' }
+  bluemarble: L.tileLayer(
+    'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3413/best/BlueMarble_NextGeneration/default/500m/{z}/{y}/{x}.jpg',
+    gibsOpts
   ),
-  voyager: L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    { subdomains: 'abcd', maxZoom: 19, attribution: '&copy; OpenStreetMap & CARTO' }
+  modis: L.tileLayer(
+    `https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3413/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/${MODIS_DATE}/250m/{z}/{y}/{x}.jpg`,
+    gibsOpts
   ),
-  topography: L.tileLayer(
-    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    {
-      subdomains: 'abc',
-      maxZoom: 17,
-      attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)'
-    }
-  ),
-  imagery: L.tileLayer(
-    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 19, attribution: 'Imagery &copy; Esri' }
+  coastlines: L.tileLayer(
+    'https://gibs-{s}.earthdata.nasa.gov/wmts/epsg3413/best/Coastlines_15m/default/250m/{z}/{y}/{x}.png',
+    gibsOpts
   )
 };
 
-basemaps.imagery.addTo(map);
+basemaps.bluemarble.addTo(map);
 setTimeout(() => map.invalidateSize(), 0);
 L.control.scale({ imperial: false }).addTo(map);
 
@@ -858,7 +883,7 @@ function zoomToLayer(layer){
   if (!layer || !layer.getBounds) return;
   const bounds = layer.getBounds();
   if (bounds && bounds.isValid()) {
-    map.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 });
+    map.fitBounds(bounds, { padding: [40, 40], maxZoom: MAX_ZOOM });
   }
 }
 
@@ -868,13 +893,13 @@ function zoomToFeature(lyr){
   if (typeof lyr.getBounds === 'function') {
     const bounds = lyr.getBounds();
     if (bounds && bounds.isValid()) {
-      map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
+      map.fitBounds(bounds, { padding: [30, 30], maxZoom: MAX_ZOOM });
       return;
     }
   }
 
   if (typeof lyr.getLatLng === 'function') {
-    map.setView(lyr.getLatLng(), Math.max(map.getZoom(), 11));
+    map.setView(lyr.getLatLng(), Math.min(Math.max(map.getZoom(), 3), MAX_ZOOM));
   }
 }
 
@@ -935,6 +960,7 @@ async function ensureLayer(id, urlOrList, style){
   try{
     const { fc, url } = await firstWorking(urlOrList);
 
+    // shp.js returns WGS84 GeoJSON; Leaflet projects it into the map CRS (EPSG:3413).
     const layer = L.geoJSON(fc, {
       style: style,
       pointToLayer: (feature, latlng) => {
